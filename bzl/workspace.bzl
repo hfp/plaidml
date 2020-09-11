@@ -30,6 +30,13 @@ def plaidml_workspace():
         strip_prefix = "benchmark-1.5.0",
     )
 
+    http_archive(
+        name = "com_google_googletest",
+        url = "https://github.com/google/googletest/archive/release-1.10.0.tar.gz",
+        sha256 = "9dc9157a9a1551ec7a7e43daea9a694a0bb5fb8bec81235d8a1e6ef64c716dcb",
+        strip_prefix = "googletest-release-1.10.0",
+    )
+
     conda_repo(
         name = "com_intel_plaidml_conda",
         env_unix = clean_dep("//conda:unix.yml"),
@@ -62,13 +69,6 @@ def plaidml_workspace():
     )
 
     http_archive(
-        name = "gmock",
-        url = "https://github.com/google/googletest/archive/release-1.10.0.tar.gz",
-        sha256 = "9dc9157a9a1551ec7a7e43daea9a694a0bb5fb8bec81235d8a1e6ef64c716dcb",
-        strip_prefix = "googletest-release-1.10.0",
-    )
-
-    http_archive(
         name = "half",
         url = "https://github.com/plaidml/depot/raw/master/half-1.11.0.zip",
         sha256 = "9e5ddb4b43abeafe190e780b5b606b081acb511e6edd4ef6fbe5de863a4affaf",
@@ -90,8 +90,8 @@ def plaidml_workspace():
         strip_prefix = "jsonnet-0.13.0",
     )
 
-    LLVM_COMMIT = "a38882d8d63e9e093926789331b6c5b4711a889e"
-    LLVM_SHA256 = "8f5dd8dc9479eb7fae76376947c0155f800bc21a508454645d2563024102467e"
+    LLVM_COMMIT = "81a1f9c06b9a84d9afcec8a1edfb578a768fa70e"
+    LLVM_SHA256 = "92c2dde9d0e4c3bbf15d9fb899019cca31c3479554ab6096ef93e79101595645"
     LLVM_URL = "https://github.com/plaidml/llvm-project/archive/{commit}.tar.gz".format(commit = LLVM_COMMIT)
     http_archive(
         name = "llvm-project",
