@@ -65,11 +65,6 @@ enum class AffineOp {
   Sub,
 };
 
-util::DataType inferElementType(llvm::ArrayRef<util::TensorShape> shapes);
-
-util::TensorShape inferShape(llvm::ArrayRef<util::TensorShape> operands,
-                             util::DataType override = util::DataType::invalid);
-
 //
 // Base AST Node
 //
@@ -174,7 +169,6 @@ struct ExprNodeContraction : NodeBase<ExprNodeContraction, ExprNode> {
   std::vector<PolyNodePtr> sinkIdxs;
   std::vector<PolyMap> srcs;
   std::vector<Constraint> constraints;
-  bool simplify = true;
   ExprNodePtr init;
 
   explicit ExprNodeContraction(llvm::StringRef name = "");
