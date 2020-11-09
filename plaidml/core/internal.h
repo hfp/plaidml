@@ -14,7 +14,7 @@
 extern "C" {
 
 struct plaidml_buffer {
-  std::shared_ptr<pmlc::util::Buffer> buffer;
+  pmlc::util::BufferPtr buffer;
 };
 
 struct plaidml_program {
@@ -77,6 +77,18 @@ ResultT* ffi_vector(const std::vector<T>& vec) {
   for (size_t i = 0; i < vec.size(); i++) {
     ptrs[i].reset(new ElementT{vec[i]});
     elts[i] = ptrs[i].release();
+  }
+  result->size = vec.size();
+  result->elts = elts.release();
+  return result.release();
+}
+
+template <typename ResultT>
+ResultT* ffi_vector(const std::vector<int64_t>& vec) {
+  std::unique_ptr<int64_t[]> elts{new int64_t[vec.size()]};
+  auto result = std::make_unique<ResultT>();
+  for (size_t i = 0; i < vec.size(); i++) {
+    elts[i] = vec[i];
   }
   result->size = vec.size();
   result->elts = elts.release();

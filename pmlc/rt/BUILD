@@ -25,6 +25,7 @@ plaidml_cc_library(
         "runtime_registry.h",
         "symbol_registry.h",
     ],
+    copts = ["-w"],
     visibility = ["//visibility:public"],
     deps = [
         "//pmlc/compiler",

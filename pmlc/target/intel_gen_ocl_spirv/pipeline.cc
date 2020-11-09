@@ -1,5 +1,7 @@
 // Copyright 2020, Intel Corporation
 
+#include "llvm/Support/FormatVariadic.h"
+
 #include "mlir/Conversion/GPUToVulkan/ConvertGPUToVulkanPass.h"
 #include "mlir/Conversion/SCFToGPU/SCFToGPU.h"
 #include "mlir/Conversion/SCFToGPU/SCFToGPUPass.h"
@@ -7,6 +9,7 @@
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h"
 #include "mlir/Conversion/StandardToSPIRV/ConvertStandardToSPIRVPass.h"
+#include "mlir/Dialect/Affine/Passes.h"
 #include "mlir/Dialect/GPU/Passes.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SPIRV/Passes.h"
@@ -57,8 +60,22 @@ void pipelineBuilder(OpPassManager &pm) {
 
   // Do subgroup or accumulation
   pm.addPass(pmlc::dialect::pxa::createSubgroupsPass());
-  // pm.addPass(pmlc::dialect::pxa::createTileAccumulatePass());
-  pm.addPass(pmlc::dialect::pxa::createAffineNormalizePass(/*promote=*/false));
+  pm.addPass(pmlc::dialect::pxa::createAffineNormalizePass());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
+
+  // Do tiled fusion
+  pm.addPass(pxa::createFusionPass(/*memoryActivityThreshold=*/0,
+                                   /*exactlyMatch=*/false, /*tiledFusion=*/true,
+                                   /*loopDepth=*/3));
+  pm.addPass(pxa::createAffineNormalizePass());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(pxa::createMemRefDataFlowOptPass(/*onlyParallelNested=*/true));
+  pm.addPass(createCanonicalizerPass());
+  // TODO: parametrize localize pass depending on memory size and HW caps
+  pm.addPass(pxa::createLocalizePass());
+  pm.addPass(pxa::createResizeTmpsPass(/*onlyParallelNested=*/true));
+  pm.addPass(pxa::createAffineNormalizePass());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
 
@@ -68,8 +85,35 @@ void pipelineBuilder(OpPassManager &pm) {
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
 
+  // Data layout optimization.
+  pm.addPass(createIntelGenOclReorderLayoutsPass(/*maxThreads=*/64,
+                                                 /*allowReorder=*/false));
+  pm.addPass(pxa::createSimplifyWithConstraintsPass());
+  pm.addPass(pmlc::dialect::pxa::createAffineNormalizePass());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
+
+  // TODO: uncomment this pass after llvm upstream update with dynamic vec ops
+  /*pm.addPass(pxa::createVectorizeMemPass());
+  pm.addPass(pmlc::dialect::pxa::createAffineNormalizePass());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());*/
+
   // Lower out of PXA memory semantics
   pm.addPass(pmlc::target::intel_gen::createLowerPXAToAffinePass());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
+
+  pm.addPass(createAffineLoopInvariantCodeMotionPass());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
+
+  // Unroll affine.for loops.
+  pm.addPass(createLoopUnrollPass(
+      /*unrollFactor=*/256,
+      /*unrollUpToFactor=*/true));
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
 
   // Pack dims
   pm.addPass(pmlc::target::intel_gen::createAffineIndexPackPass());
@@ -85,11 +129,12 @@ void pipelineBuilder(OpPassManager &pm) {
   pm.addPass(dialect::stdx::createI1StorageToI32Pass());
 
   // Devectorize
-  pm.addPass(pmlc::target::intel_gen::createSubgroupBroadcastPass());
+  pm.addPass(pmlc::target::intel_gen::createSubgroupBroadcastPass(
+      /*useBlockOpsr=*/true));
   pm.addPass(createCSEPass());
 
   // Lower mapped scf.parallel's to GPU
-  pm.addPass(createParallelLoopToGpuPass());
+  pm.addPass(pmlc::target::intel_gen::createParallelLoopToGpuPass());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
 
@@ -102,6 +147,8 @@ void pipelineBuilder(OpPassManager &pm) {
       comp::ExecEnvRuntime::OpenCL, /*memorySpace=*/11));
   pm.addPass(comp::createExecEnvCoalescingPass());
   pm.addPass(comp::createMinimizeAllocationsPass());
+  pm.addPass(comp::createRemoveRedundantRWPass());
+  pm.addPass(comp::createRecalculateEventDepsPass(/*safeDealloc=*/false));
 
   // GPU to SPIR-V.
   pm.addPass(createLegalizeStdOpsForSPIRVLoweringPass());
@@ -111,6 +158,7 @@ void pipelineBuilder(OpPassManager &pm) {
 
   // SPIR-V passes for lowering attributes.
   pm.addPass(createSetSubgroupSizePass());
+  pm.addPass(createLegalizeSpirvPass());
   pm.addPass(spirv::createLowerABIAttributesPass());
   pm.addPass(spirv::createUpdateVersionCapabilityExtensionPass());
 
@@ -121,11 +169,27 @@ void pipelineBuilder(OpPassManager &pm) {
   pm.addPass(pmlc::target::intel_gen::createConvertStandardToLLVM());
 }
 
+static constexpr const char *kTargetName = "intel_gen_ocl_spirv";
+static constexpr const char *kPassPipelineTargetName =
+    "target-intel_gen_ocl_spirv";
+
 static PassPipelineRegistration<>
-    passPipelineReg("target-intel_gen_ocl_spirv",
+    passPipelineReg(kPassPipelineTargetName,
                     "Target pipeline for Intel GEN iGPUs", pipelineBuilder);
 
-static compiler::TargetRegistration targetReg("intel_gen_ocl_spirv",
-                                              pipelineBuilder);
+class Target : public compiler::Target {
+public:
+  void buildPipeline(mlir::OpPassManager &pm) { pipelineBuilder(pm); }
+
+  util::BufferPtr save(compiler::Program &program) {
+    throw std::runtime_error(
+        llvm::formatv("Target '{0}' does not have 'save' support.", kTargetName)
+            .str());
+  }
+};
+
+static compiler::TargetRegistration targetReg(kTargetName, []() {
+  return std::make_shared<Target>();
+});
 
 } // namespace pmlc::target::intel_gen_ocl_spirv
