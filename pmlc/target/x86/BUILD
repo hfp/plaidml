@@ -29,13 +29,14 @@ plaidml_cc_library(
         "pass_detail.h",
         "pipeline.cc",
         "trace_linking.cc",
-        "utils.h",
         "utils.cc",
+        "utils.h",
         "xsmm_lowering.cc",
         ":heatmap",
     ],
     hdrs = [
         "passes.h",
+        "pipeline.h",
     ],
     deps = [
         ":gen-pass",
@@ -45,6 +46,7 @@ plaidml_cc_library(
         "//pmlc/conversion/scf_to_omp",
         "//pmlc/conversion/stdx_to_llvm",
         "//pmlc/conversion/tile_to_pxa",
+        "//pmlc/dialect/layer/transforms",
         "//pmlc/dialect/pxa/analysis",
         "//pmlc/dialect/pxa/transforms",
         "//pmlc/dialect/stdx/transforms",

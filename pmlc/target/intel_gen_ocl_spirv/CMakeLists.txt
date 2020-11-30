@@ -2,6 +2,7 @@ pml_cc_library(
   NAME intel_gen_ocl_spirv
   HDRS
     passes.h
+    pipeline.h
   SRCS
     legalize_spirv.cc
     pipeline.cc
@@ -19,9 +20,11 @@ pml_cc_library(
     pmlc::conversion::stdx_to_llvm
     pmlc::conversion::tile_to_pxa
     pmlc::dialect::comp::transforms
+    pmlc::dialect::layer::transforms
     pmlc::dialect::pxa::transforms
     pmlc::dialect::stdx::transforms
     pmlc::dialect::tile::transforms
+    pmlc::target::intel_gen
     pmlc::target::x86::prng_lowering
     MLIRAffineToStandard
     MLIRAffineTransforms
