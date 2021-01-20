@@ -39,8 +39,10 @@ endif()
 # -------------------------------------------------------------------------------
 # Project component configuration
 # -------------------------------------------------------------------------------
-option(ENABLE_OPENVINO_BRIDGE "Enable the OpenVINO plugin" ON)
 option(PML_BUILD_TESTS "Builds PML unit tests." ON)
+option(PML_OPENVINO_BRIDGE "Enable the OpenVINO plugin" ON)
+option(PML_ENABLE_OPENCL "Enable OpenCL support" ON)
+option(PML_ENABLE_VULKAN "Enable Vulkan support" ON)
 
 list(APPEND CMAKE_MODULE_PATH
   ${CMAKE_CURRENT_LIST_DIR}/cmake
@@ -53,6 +55,32 @@ if(CCACHE_PROGRAM)
   set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
 endif()
 
+# -------------------------------------------------------------------------------
+# Third party dependencies
+# -------------------------------------------------------------------------------
+include(CPM)
+include(boost)
+include(easylogging)
+if(NOT PML_OPENVINO_BRIDGE OR InferenceEngineDeveloperPackage_FOUND)
+  include(gflags)
+  include(googletest)
+endif()
+include(half)
+include(llvm-project)
+if(PML_ENABLE_OPENCL)
+  include(opencl_headers)
+  include(opencl_hpp_headers)
+  include(opencl_icd_loader)
+endif()
+if(PML_ENABLE_VULKAN)
+  include(vulkan_headers)
+  include(volk)
+endif()
+include(xsmm)
+
+# -------------------------------------------------------------------------------
+# Enable testing
+# -------------------------------------------------------------------------------
 if(PML_BUILD_TESTS)
   enable_testing()
   add_custom_target(check-smoke
@@ -64,20 +92,6 @@ if(PML_BUILD_TESTS)
     USES_TERMINAL
   )
 endif()
-
-# -------------------------------------------------------------------------------
-# Third party dependencies
-# -------------------------------------------------------------------------------
-include(CPM)
-include(boost)
-include(easylogging)
-if(NOT ENABLE_OPENVINO_BRIDGE OR InferenceEngineDeveloperPackage_FOUND)
-  include(gflags)
-  include(googletest)
-endif()
-include(half)
-include(llvm-project)
-include(xsmm)
 
 # -------------------------------------------------------------------------------
 # cmake modules
@@ -105,6 +119,7 @@ endif()
 
 add_subdirectory(plaidml)
 add_subdirectory(pmlc)
+add_subdirectory(docs)
 
 # Note: this must be called after all libraries have been declared.
 pml_complete_binary_link_options()
@@ -115,3 +130,5 @@ configure_lit_site_cfg(
   MAIN_CONFIG
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.cfg.py
 )
+
+ie_cpack(BENCHMARK_APP)

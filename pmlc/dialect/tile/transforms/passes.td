@@ -8,6 +8,11 @@ def ComputeBounds : FunctionPass<"tile-compute-bounds"> {
   let constructor = "pmlc::dialect::tile::createComputeBoundsPass()";
 }
 
+def ExpandReshape : FunctionPass<"tile-expand-reshape"> {
+  let summary = "Expand reshape and generate contraction";
+  let constructor = "pmlc::dialect::tile::createExpandReshapePass()";
+}
+
 def Materialize : FunctionPass<"tile-materialize"> {
   let summary = "Materialize arbitrary-precision values based on type promotion rules";
   let constructor = "pmlc::dialect::tile::createMaterializePass()";
@@ -29,6 +34,14 @@ def PadRanges : FunctionPass<"tile-pad-ranges"> {
 def PadConstraints : FunctionPass<"tile-pad-constraints"> {
   let summary = "Pad outputs to remove constraints on inputs";
   let constructor = "pmlc::dialect::tile::createPadConstraintsPass()";
+}
+
+def SplitMain :  Pass<"tile-split-main", "mlir::ModuleOp"> {
+  let summary = "Split main into init/main/fini";
+  let constructor = "pmlc::dialect::tile::createSplitMainPass()";
+  let dependentDialects = [
+    "pmlc::dialect::stdx::StdXDialect"
+  ];
 }
 
 #endif // __PMLC_DIALECT_TILE_PASSES__

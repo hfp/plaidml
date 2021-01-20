@@ -18,9 +18,9 @@ def AutoTileExample : FunctionPass<"pxa-autotile-example"> {
   let constructor = "pmlc::dialect::pxa::createAutoTileExamplePass()";
 }
 
-def BufferPlacement : FunctionPass<"pxa-buffer-placement"> {
-  let summary = "Optimizes placement of alloc and dealloc operations";
-  let constructor = "pmlc::dialect::pxa::createBufferPlacementPass()";
+def DeallocPlacement : Pass<"pxa-dealloc-placement", "mlir::ModuleOp"> {
+  let summary = "Adds deallocs for memref allocs";
+  let constructor = "pmlc::dialect::pxa::createDeallocPlacementPass()";
 }
 
 def Cache : FunctionPass<"pxa-cache"> {
@@ -45,6 +45,9 @@ def Cache : FunctionPass<"pxa-cache"> {
     Option<"innerTag", "inner-tag", "std::string",
            /*default=*/"\"inner\"",
            "Inner loop tag">,
+    Option<"wholeBlock", "whole-block", "bool",
+           /*default=*/"false",
+           "Whether cache the whole memory block">
   ];
 }
 
@@ -161,6 +164,11 @@ def Vectorize : FunctionPass<"pxa-vectorize"> {
     Option<"vectorWidth", "width", "unsigned", /*default=*/"8",
            "Vector register size in elements">
   ];
+}
+
+def SimplifyArithmetic : FunctionPass<"pxa-simplify-arithmetic"> {
+  let summary = "Simplifies arithmetic";
+  let constructor = "pmlc::dialect::pxa::createSimplifyArithmeticPass()";
 }
 
 def SimplifyWithConstraints : FunctionPass<"pxa-simplify-with-constraints"> {

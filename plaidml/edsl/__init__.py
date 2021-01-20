@@ -764,6 +764,31 @@ def abs(x):
     return intrinsic('abs', x)
 
 
+class SortDirection(enum.IntEnum):
+    """Ordering direction for a sort operation."""
+
+    ASC = 0
+    """Sort a tensor in ascending order."""
+
+    DESC = 1
+    """Sort a tensor in descending order."""
+
+
+def argsort(x, axis=-1, direction=SortDirection.ASC):
+    """Returns the indices of a tensor ``x`` that give its sorted order along
+    an ``axis``, where -1 represents the last axis, in either ascending or
+    descending ``direction``.
+
+    Args:
+        x (Tensor): The tensor to be sorted.
+        axis (TensorDim): The axis to perform sorting on.
+        direction (SortDirection): The direction of value comparison.
+    Returns:
+        Tensor: An integer tensor with the same shape as ``x``.
+    """
+    return intrinsic('argsort', x, axis, direction)
+
+
 def cast(x, dtype):
     """Casts the element type of a tensor ``x`` to the type specified by ``dtype``.
 
@@ -842,7 +867,26 @@ def floor(x):
     return intrinsic('floor', x)
 
 
-def gather(x, y):
+class InterpolationMode(enum.Enum):
+    NEAREST = 0
+    LINEAR = 1
+    CUBIC = 2
+
+
+class NearestMode(enum.Enum):
+    ROUND_PREFER_FLOOR = 0
+    ROUND_PREFER_CEIL = 1
+    FLOOR = 2
+    CEIL = 3
+    SIMPLE = 4
+
+
+def gather(x,
+           y,
+           axis=0,
+           interpolation_mode=InterpolationMode.LINEAR,
+           nearest_mode=NearestMode.ROUND_PREFER_FLOOR,
+           cube_coeff=-0.75):
     """Takes an input tensor (``x``) and a set of indices to gather over
     (``y``), and returns an output tensor that gathers the input tensor from the
     indices specified.
@@ -850,11 +894,16 @@ def gather(x, y):
     Args:
         x (Tensor): The tensor to peform ``gather`` on.
         y (Tensor): The set of indices to ``gather`` over.
+        axis (int): The dimension index to ``gather`` data from.
+        interpolation_mode (Enum): The type of interpolation.
+        nearest_mode (Enum): The type of nearest interpolation.
+        cube_coeff (float): The coefficient that controls the cubic interpolation.
 
     Returns:
         Tensor: The result of the ``gather`` operation.
     """
-    return intrinsic('gather', x, y)
+    return intrinsic('gather', x, y, axis, interpolation_mode.value, nearest_mode.value,
+                     cube_coeff)
 
 
 def ident(x):

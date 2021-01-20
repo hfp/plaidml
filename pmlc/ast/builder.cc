@@ -180,7 +180,6 @@ private:
   std::stack<Entry> stack;
   std::vector<ExprNodePtr> flat;
   std::unordered_set<const ExprNode *> visited;
-  std::unordered_set<ExprNodePtr> exterior;
 
 public:
   explicit AstTraversal(const std::vector<ExprNodePtr> &outputs,
@@ -196,7 +195,12 @@ public:
       } else if (!visited.count(entry.expr.get())) {
         visited.emplace(entry.expr.get());
         if (layer && entry.expr->parent.get() != layer) {
-          exterior.insert(entry.expr);
+          if (std::find(layer->operands.begin(), layer->operands.end(),
+                        entry.expr) == layer->operands.end()) {
+            throw std::runtime_error(llvm::formatv(
+                "Implicit operand detected within layer body: {0}",
+                entry.expr->str()));
+          }
         } else {
           push(entry.expr, /*post=*/true);
           visit(entry.expr.get());
@@ -207,13 +211,9 @@ public:
 
   const std::vector<ExprNodePtr> &getFlat() const { return flat; }
 
-  const std::unordered_set<ExprNodePtr> &getExterior() const {
-    return exterior;
-  }
-
 private:
   void visit(ExprNode *node) {
-    TypeSwitch<ExprNode *>(node) //
+    TypeSwitch<ExprNode *>(node)
         .Case<ExprNodeCast>([&](ExprNodeCast *expr) { push(expr->expr); })
         .Case<ExprNodeContraction>([&](ExprNodeContraction *expr) {
           // Push inputs from right-to-left so they eventually get processed in
@@ -228,6 +228,9 @@ private:
         .Case<ExprNodeElement>([&](ExprNodeElement *expr) { push(expr->expr); })
         .Case<ExprNodeLayer>([&](ExprNodeLayer *expr) {
           for (const ExprNodePtr &node : llvm::reverse(expr->results)) {
+            push(node);
+          }
+          for (const ExprNodePtr &node : llvm::reverse(expr->operands)) {
             push(node);
           }
         })
@@ -659,10 +662,12 @@ struct ProgramBuilder {
     using IntrinsicBuilder = std::function<Value()>;
     auto intrinsicBuilder =
         llvm::StringSwitch<IntrinsicBuilder>(node->op)
+            .Case("argsort", [&]() { return makeArgSortOp(node, operands); })
             .Case("index", [&]() { return makeIndexOp(node, operands); })
             .Case("prng", [&]() { return makePrngOp(node, operands); })
             .Case("reshape", [&]() { return makeReshapeOp(node, operands); })
             .Case("scatter", [&]() { return makeScatterOp(node, operands); })
+            .Case("gather", [&]() { return makeGatherOp(node, operands); })
             .Default([&]() {
               const AbstractOperation *abstractOp = lookupOperation(node->op);
               OperationState state(loc, abstractOp->name);
@@ -677,12 +682,16 @@ struct ProgramBuilder {
   Value handleLayer(ExprNodeLayer *node) {
     AstTraversal traversal(node->results, node);
     SmallVector<Value, 8> operands;
-    for (const ExprNodePtr &operand : traversal.getExterior()) {
+    for (const ExprNodePtr &operand : node->operands) {
       operands.push_back(builder.lookupNode(operand));
     }
     llvm::SetVector<Value> results;
     for (const ExprNodePtr &result : node->results) {
       results.insert(builder.lookupNode(result));
+    }
+    llvm::SmallVector<Type, 4> resultTypes;
+    for (Value val : results) {
+      resultTypes.push_back(val.getType());
     }
     std::vector<NamedAttribute> attrs;
     for (const auto &kvp : node->attrs) {
@@ -690,8 +699,7 @@ struct ProgramBuilder {
       attrs.push_back(builder.getNamedAttr(kvp.getKey(), value));
     }
     auto layerOp = builder.create<layer::BoxOp>(
-        loc, node->op, operands, results.getArrayRef(),
-        builder.getDictionaryAttr(attrs));
+        loc, node->op, operands, resultTypes, builder.getDictionaryAttr(attrs));
     BlockAndValueMapping mapper;
     OpBuilder bodyBuilder(layerOp.body());
     for (auto tuple : llvm::zip(operands, layerOp.body().getArguments())) {
@@ -742,6 +750,62 @@ struct ProgramBuilder {
         .result();
   }
 
+  Value makeGatherOp(ExprNodeIntrinsic *node, ArrayRef<Value> operands) {
+    TensorShape shape = evaluator.getShape(node);
+    RankedTensorType resultType = builder.getRankedTensorType(shape);
+    IntegerAttr axis;
+    IntegerAttr interpolationMode;
+    IntegerAttr nearestMode;
+    FloatAttr cubeCoeff;
+    if (!matchPattern(operands[2], m_Constant(&axis))) {
+      throw std::runtime_error("'gather' primitive expects the 'axis' argument "
+                               "to be a constant integer");
+    }
+    if (!matchPattern(operands[3], m_Constant(&interpolationMode))) {
+      throw std::runtime_error(
+          "'gather' primitive expects the 'interpolationMode' argument "
+          "to be a constant integer");
+    }
+    if (!matchPattern(operands[4], m_Constant(&nearestMode))) {
+      throw std::runtime_error(
+          "'gather' primitive expects the 'nearestMode' argument "
+          "to be a constant integer");
+    }
+    if (!matchPattern(operands[5], m_Constant(&cubeCoeff))) {
+      throw std::runtime_error(
+          "'gather' primitive expects the 'cubeCoeff' argument "
+          "to be a constant float");
+    }
+    auto op = builder.create<tile::GatherOp>(
+        loc, resultType, operands.take_front(2),
+        builder.getIndexAttr(axis.getInt()), interpolationMode, nearestMode,
+        cubeCoeff);
+    return op.result();
+  }
+  
+  Value makeArgSortOp(ExprNodeIntrinsic *node, ArrayRef<Value> operands) {
+    TensorShape shape = evaluator.getShape(node);
+    auto i32Type = builder.getIntegerType(32, /*isSigned=*/true);
+    RankedTensorType resultType = RankedTensorType::get(shape.sizes, i32Type);
+    Value tensor = operands[0];
+    Value axis = operands[1];
+    Value direction = operands[2];
+    IntegerAttr axisAttr;
+    if (!matchPattern(axis, m_Constant(&axisAttr))) {
+      throw std::runtime_error(
+          "'argsort' requires operand #2 to be a constant integer.");
+    }
+    IntegerAttr directionAttr;
+    if (!matchPattern(direction, m_Constant(&directionAttr))) {
+      throw std::runtime_error(
+          "'argsort' requires operand #3 to be a constant integer.");
+    }
+    IntegerAttr axisIndexAttr = builder.getIndexAttr(axisAttr.getInt());
+    auto op = builder.create<tile::ArgSortOp>(loc, resultType, tensor,
+                                              axisIndexAttr, directionAttr);
+    return op.result();
+  }
+
   Value makeReshapeOp(ExprNodeIntrinsic *node, ArrayRef<Value> operands) {
     TensorShape shape = evaluator.getShape(node);
     RankedTensorType resultType = builder.getRankedTensorType(shape);
@@ -751,9 +815,23 @@ struct ProgramBuilder {
 
   Value makeScatterOp(ExprNodeIntrinsic *node, ArrayRef<Value> operands) {
     TensorShape shape = evaluator.getShape(node);
+    IntegerAttr axis;
+    IntegerAttr mode;
+
+    if (!matchPattern(operands[3], m_Constant(&axis))) {
+      throw std::runtime_error(
+          "'scatter' primitive expects the 'axis' argument "
+          "to be a constant integer");
+    }
+    if (!matchPattern(operands[4], m_Constant(&mode))) {
+      throw std::runtime_error(
+          "'scatter' primitive expects the 'mode' argument "
+          "to be a constant integer");
+    }
     RankedTensorType resultType = builder.getRankedTensorType(shape);
-    auto op = builder.create<tile::ScatterOp>(loc, resultType,
-                                              operands.take_front(2));
+    auto op = builder.create<tile::ScatterOp>(
+        loc, resultType, operands.take_front(3),
+        builder.getIndexAttr(axis.getInt()), mode);
     return op.result();
   }
 

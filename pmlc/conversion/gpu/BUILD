@@ -23,14 +23,17 @@ gentbl(
 plaidml_cc_library(
     name = "gpu",
     srcs = [
+        "gather_gpu_launch_funcs.cc",
         "kernel_outlining.cc",
         "pass_detail.h",
     ],
     hdrs = [
-        "lowering.h",
+        "passes.h",
     ],
     deps = [
         ":gen-pass",
+        "//pmlc/dialect/comp/ir",
+        "//pmlc/dialect/stdx/ir",
         "//pmlc/util",
         "@llvm-project//mlir:GPUToSPIRVTransforms",
         "@llvm-project//mlir:GPUTransforms",

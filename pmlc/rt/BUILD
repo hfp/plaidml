@@ -52,10 +52,15 @@ plaidml_cc_library(
 plaidml_cc_library(
     name = "all_runtimes",
     srcs = ["all_runtimes.cc"],
+    defines = [
+        "PML_ENABLE_OPENCL",
+        "PML_ENABLE_VULKAN",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":rt",
         "//pmlc/rt/llvm",
+        "//pmlc/rt/opencl",
         "//pmlc/rt/vulkan",
     ],
     alwayslink = 1,

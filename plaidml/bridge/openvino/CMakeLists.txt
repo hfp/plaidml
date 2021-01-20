@@ -26,7 +26,7 @@ if(NOT InferenceEngineDeveloperPackage_FOUND)
   FetchContent_Declare(
     openvino
     GIT_REPOSITORY https://github.com/plaidml/openvino.git
-    GIT_TAG        02c1b88ca69553ab90ad15b18328e6e3169ae205
+    GIT_TAG        817b43395e7dfa35146670c69e05195946431aa3
   )
   if(LOCAL_OPENVINO_DIR)
     set(openvino_SOURCE_DIR ${LOCAL_OPENVINO_DIR})
@@ -74,3 +74,41 @@ add_subdirectory(plugin)
 if(PML_BUILD_TESTS)
   add_subdirectory(tests/functional)
 endif()
+
+ie_cpack_add_component(BENCHMARK_APP REQUIRED)
+install(
+    PROGRAMS
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/benchmark_app
+    DESTINATION bin
+    COMPONENT BENCHMARK_APP
+)
+
+install(
+    DIRECTORY ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/
+    DESTINATION bin/lib
+    COMPONENT BENCHMARK_APP
+    USE_SOURCE_PERMISSIONS
+    PATTERN "*.a" EXCLUDE
+)
+
+install(
+    PROGRAMS
+        ${OUTPUT_ROOT}/bin/libplaidml.so
+        ${OUTPUT_ROOT}/bin/libplaidml.so.1
+        ${OpenVINO_MAIN_SOURCE_DIR}/${BIN_FOLDER}/${CMAKE_BUILD_TYPE}/lib/libformat_reader.so
+        ${IE_MAIN_SOURCE_DIR}/temp/tbb/lib/libtbb.so.2
+        ${LLVM_BINARY_DIR}/lib/libmlir_runner_utils.so.12git
+        ${LLVM_BINARY_DIR}/lib/libomp.so
+    DESTINATION bin/lib
+    COMPONENT BENCHMARK_APP
+)
+
+install(
+    DIRECTORY ${IE_MAIN_SOURCE_DIR}/temp/opencv_4.5.0_ubuntu20/opencv/lib/
+    DESTINATION bin/lib
+    COMPONENT BENCHMARK_APP
+    USE_SOURCE_PERMISSIONS
+    FILES_MATCHING
+    PATTERN "libopencv_core.so*"
+    PATTERN "libopencv_img*.so*"
+)

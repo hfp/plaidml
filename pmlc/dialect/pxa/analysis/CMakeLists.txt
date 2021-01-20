@@ -4,14 +4,17 @@ pml_cc_library(
   SRCS
     affine_constraints.cc
     affine_expr.cc
+    memref_access.cc
     strides.cc
     uses.cc
   HDRS
     affine_constraints.h
     affine_expr.h
+    memref_access.cc
     strides.h
     uses.h
   DEPS
     pmlc::util::bilp
+    pmlc::dialect::layer::ir
     pmlc::dialect::pxa::ir
 )

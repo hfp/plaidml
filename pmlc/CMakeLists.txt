@@ -6,6 +6,7 @@ add_subdirectory(rt)
 add_subdirectory(target)
 add_subdirectory(testing)
 add_subdirectory(tools)
+add_subdirectory(transforms)
 add_subdirectory(util)
 
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
@@ -24,13 +25,13 @@ pml_cc_library(
     MLIRTransforms
     pmlc::conversion::comp_to_llvm
     pmlc::conversion::gpu
-    pmlc::conversion::gpu_to_comp
     pmlc::conversion::gpu_to_spirv
     pmlc::conversion::pxa_to_affine
     pmlc::conversion::scf_to_omp
     pmlc::conversion::stdx_to_llvm
     pmlc::conversion::tile_to_pxa
     pmlc::dialect::abi::ir
+    pmlc::dialect::affinex::transforms
     pmlc::dialect::comp::ir
     pmlc::dialect::comp::transforms
     pmlc::dialect::layer::ir
@@ -44,6 +45,7 @@ pml_cc_library(
     pmlc::dialect::xsmm::ir
     pmlc::rt::all_runtimes
     pmlc::target::all
+    pmlc::transforms
 )
 
 pml_lit_test(

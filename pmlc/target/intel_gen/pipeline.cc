@@ -3,6 +3,8 @@
 #include "pmlc/target/intel_gen/pipeline.h"
 
 #include <memory>
+#include <string>
+#include <unordered_map>
 
 #include "llvm/Support/FormatVariadic.h"
 
@@ -27,12 +29,12 @@
 
 #include "pmlc/compiler/registry.h"
 #include "pmlc/conversion/comp_to_llvm/passes.h"
-#include "pmlc/conversion/gpu/lowering.h"
-#include "pmlc/conversion/gpu_to_comp/passes.h"
+#include "pmlc/conversion/gpu/passes.h"
 #include "pmlc/conversion/gpu_to_spirv/passes.h"
 #include "pmlc/conversion/pxa_to_affine/passes.h"
 #include "pmlc/conversion/stdx_to_llvm/passes.h"
 #include "pmlc/conversion/tile_to_pxa/passes.h"
+#include "pmlc/dialect/affinex/transforms/passes.h"
 #include "pmlc/dialect/comp/ir/types.h"
 #include "pmlc/dialect/comp/transforms/passes.h"
 #include "pmlc/dialect/layer/transforms/passes.h"
@@ -179,9 +181,19 @@ void pipelineBuilder(OpPassManager &pm) {
   pm.addPass(createLowerPXAToAffinePass());
 
   // Unroll affine.for loops.
-  pm.addPass(createLoopUnrollPass(
-      /*unrollFactor=*/256,
-      /*unrollUpToFactor=*/true));
+  pm.addPass(pmlc::dialect::affinex::createAffinexLoopUnroll(
+      /*operationLimit =*/2048));
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
+
+  // Block level MemRef dataflow optimization
+  // WARNING: Assumes no aliasing
+  // (try disabling this pass in case of correctness errors)
+  pm.addPass(pmlc::dialect::affinex::createAffinexMemRefDataFlowOpt());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
+
+  pm.addPass(pmlc::dialect::affinex::createAffinexDeadMemRefElimination());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
 
@@ -199,7 +211,7 @@ void pipelineBuilder(OpPassManager &pm) {
   pm.addPass(stdx::createI1StorageToI32Pass());
 
   // Devectorize
-  pm.addPass(createSubgroupBroadcastPass());
+  pm.addPass(createSubgroupBroadcastPass(/*useBlockOps=*/false));
   pm.addPass(createCSEPass());
 
   // Lower mapped scf.parallel's to GPU
@@ -207,14 +219,9 @@ void pipelineBuilder(OpPassManager &pm) {
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
 
-  // Do kernel outlining
-  pm.addPass(conversion::gpu::createGpuKernelOutliningPass());
-
-  // Convert GPU to comp.
-  pm.addPass(pmlc::conversion::gpu_to_comp::createConvertGpuToCompPass(
+  // GPU transforms
+  pm.addPass(conversion::gpu::createGpuKernelOutliningPass(
       comp::ExecEnvRuntime::Vulkan, /*memorySpace=*/0));
-  pm.addPass(comp::createExecEnvCoalescingPass());
-  pm.addPass(comp::createMinimizeAllocationsPass());
 
   // GPU to SPIR-V.
   pm.addPass(createLegalizeStdOpsForSPIRVLoweringPass());
@@ -227,8 +234,20 @@ void pipelineBuilder(OpPassManager &pm) {
   pm.addPass(spirv::createLowerABIAttributesPass());
   pm.addPass(spirv::createUpdateVersionCapabilityExtensionPass());
 
+  // Unbox wrapped argsort and lower remaining affine loops.
+  pm.addPass(layer::createInlineLayersPass());
+  pm.addPass(pmlc::target::intel_gen::createLowerPXAToAffinePass());
+  pm.addPass(createLowerAffinePass());
+  pm.addPass(createLowerToCFGPass());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
+
   // Comp to LLVM - Vulkan function calls.
-  pm.addPass(pmlc::conversion::comp_to_llvm::createConvertCompToVulkanPass());
+  pm.addPass(
+      pmlc::conversion::comp_to_llvm::createConvertCompToLLVMPass("vlk_"));
+
+  // Lower SCF to Standard before converting to LLVM
+  pm.addPass(createLowerToCFGPass());
 
   // Convert Vulkan calls to LLVM code
   pm.addPass(createConvertStandardToLLVM());
@@ -247,7 +266,9 @@ public:
     pipelineBuilder(pm);
   }
 
-  util::BufferPtr save(compiler::Program &program) {
+  util::BufferPtr
+  save(compiler::Program &program,
+       const std::unordered_map<std::string, std::string> &config) {
     throw std::runtime_error(
         llvm::formatv("Target '{0}' does not have 'save' support.", kTargetName)
             .str());

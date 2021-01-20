@@ -92,11 +92,8 @@ void ProgramBuilder::handleConstant(const std::shared_ptr<ngraph::Node>& node) {
   tensorMap[std::make_pair(node->get_name(), 0)] = tensor;
 }
 
-#define USE_CAST 0
-
 void ProgramBuilder::handleParameter(const std::shared_ptr<ngraph::Node>& node) {
   IE_ASSERT(node->get_output_size() == 1);
-#if USE_CAST
   const InferenceEngine::TensorDesc& inputDesc = inputsInfo.at(node->get_friendly_name())->getTensorDesc();
   std::vector<int64_t> dims{inputDesc.getDims().begin(), inputDesc.getDims().end()};
   plaidml::DType nodeType = to_plaidml(node->get_element_type());
@@ -107,13 +104,6 @@ void ProgramBuilder::handleParameter(const std::shared_ptr<ngraph::Node>& node) 
     tensor = plaidml::edsl::cast(tensor, nodeType);
   }
   tensorMap[std::make_pair(node->get_name(), 0)] = tensor;
-#else
-  std::vector<int64_t> dims{node->get_shape().begin(), node->get_shape().end()};
-  plaidml::DType type = to_plaidml(node->get_element_type());
-  plaidml::edsl::Tensor tensor = plaidml::edsl::Placeholder(type, dims, node->get_friendly_name());
-  tensorMap[std::make_pair(node->get_name(), 0)] = tensor;
-  tensorIONameMap[node->get_friendly_name()] = tensor;
-#endif
 }
 
 void ProgramBuilder::handleOutput(const std::shared_ptr<ngraph::Node>& node) {
@@ -126,12 +116,10 @@ void ProgramBuilder::handleOutput(const std::shared_ptr<ngraph::Node>& node) {
     name += "." + std::to_string(src_output.get_index());
   }
   plaidml::edsl::Tensor tensor = tensorMap.at(std::make_pair(src_node->get_name(), src_output.get_index()));
-#if USE_CAST
   plaidml::DType outputType = to_plaidml(outputsInfo.at(name)->getTensorDesc().getPrecision());
   if (outputType != tensor.dtype()) {
     tensor = plaidml::edsl::cast(tensor, outputType);
   }
-#endif
   tensorIONameMap[name] = tensor;
 }
 
@@ -221,16 +209,17 @@ void ProgramBuilder::handleOp(const std::shared_ptr<ngraph::Node>& node) {
   }
   PlaidMLAttributeVisitor visitor;
   node->visit_attributes(visitor);
-  plaidml::edsl::TensorVec tuple = plaidml::edsl::layer("ng." + node->description(), visitor.attrs, [&]() {
-    plaidml::edsl::Value value = op(ctx);
-    std::vector<plaidml::edsl::Value> tuple = value.as_tuple();
-    plaidml::edsl::TensorVec outputs;
-    outputs.reserve(tuple.size());
-    for (plaidml::edsl::Value output : tuple) {
-      outputs.push_back(output.as_tensor());
-    }
-    return outputs;
-  });
+  plaidml::edsl::TensorVec tuple =
+      plaidml::edsl::layer("ng." + node->description(), ctx.operands, visitor.attrs, [&]() {
+        plaidml::edsl::Value value = op(ctx);
+        std::vector<plaidml::edsl::Value> tuple = value.as_tuple();
+        plaidml::edsl::TensorVec outputs;
+        outputs.reserve(tuple.size());
+        for (plaidml::edsl::Value output : tuple) {
+          outputs.push_back(output.as_tensor());
+        }
+        return outputs;
+      });
   IE_ASSERT(tuple.size() == node->get_output_size());
   for (unsigned i = 0; i < tuple.size(); i++) {
     plaidml::edsl::Tensor tensor = tuple.at(i);

@@ -20,6 +20,10 @@ namespace pmlc::dialect::tile {
 
 using llvm::SmallVector;
 
+LogicalResult ArgSortOp::materializeOperands(OpBuilder &builder) {
+  return tile::materializeOperands(builder, getOperation());
+}
+
 LogicalResult ContractionOp::materializeOperands(OpBuilder &builder) {
   Operation *op = getOperation();
   if (combo() == CombinationKind::cond) {
@@ -318,7 +322,32 @@ LogicalResult verifyContractionOp(ContractionOp op) {
   return success();
 }
 
+void GatherOp::build(OpBuilder &builder, OperationState &result,
+                     Type resultType, ValueRange operands, IntegerAttr axis,
+                     IntegerAttr interpolationMode, IntegerAttr nearestMode,
+                     FloatAttr cubeCoeff) {
+  assert(operands.size() == 2u && "mismatched number of parameters");
+  result.addOperands(operands);
+  result.addAttribute("axis", axis);
+  result.addAttribute("interpolationMode", interpolationMode);
+  result.addAttribute("nearestMode", nearestMode);
+  result.addAttribute("cubeCoeff", cubeCoeff);
+  result.addTypes(resultType);
+}
+
+void ScatterOp::build(OpBuilder &builder, OperationState &result,
+                      Type resultType, ValueRange operands, IntegerAttr axis,
+                      IntegerAttr mode) {
+  assert(operands.size() == 3u && "mismatched number of parameters");
+  result.addOperands(operands);
+  result.addAttribute("axis", axis);
+  result.addAttribute("mode", mode);
+  result.addTypes(resultType);
+}
+
 } // namespace pmlc::dialect::tile
+
+#include "pmlc/dialect/tile/ir/enums.cc.inc"
 
 #define GET_OP_CLASSES
 #include "pmlc/dialect/tile/ir/ops.cc.inc"

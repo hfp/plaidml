@@ -1,4 +1,8 @@
 // Copyright 2020 Intel Corporation
+#include "pmlc/target/x86/pipeline.h"
+
+#include <algorithm>
+#include <memory>
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/OpenMPToLLVM/ConvertOpenMPToLLVM.h"
@@ -27,6 +31,7 @@
 #include "pmlc/target/x86/heatmap.h"
 #include "pmlc/target/x86/pass_detail.h"
 #include "pmlc/target/x86/passes.h"
+#include "pmlc/transforms/passes.h"
 #include "pmlc/util/env.h"
 #include "pmlc/util/logging.h"
 
@@ -211,6 +216,8 @@ std::unique_ptr<Pass> createOpenMPWorkaroundPass() {
 void pipelineBuilder(OpPassManager &pm) {
   pm.addPass(layer::createInlineLayersPass());
   pm.addPass(tile::createComputeBoundsPass());
+  pm.addPass(tile::createSplitMainPass());
+  pm.addPass(transforms::createHoistingPass());
   pm.addPass(tile::createPadConstraintsPass());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
@@ -218,6 +225,7 @@ void pipelineBuilder(OpPassManager &pm) {
   pm.addPass(pmlc::conversion::tile_to_pxa::createLowerTileToPXAPass());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
+  pm.addPass(layer::createInlineLayersPass());
 
   pm.addPass(pxa::createStencilGEMMPass(/*numThreads=*/1, /*doBatch=*/true,
                                         heatmapCostTransposed));
@@ -249,7 +257,7 @@ void pipelineBuilder(OpPassManager &pm) {
 
   pm.addPass(pxa::createLocalizePass());
   pm.addPass(pxa::createResizeTmpsPass());
-  pm.addPass(pxa::createBufferPlacementPass());
+  pm.addPass(pxa::createDeallocPlacementPass());
   pm.addPass(pxa::createAffineNormalizePass());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
